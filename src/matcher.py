@@ -7,11 +7,12 @@ from .similarity import SimilarityCalculator
 class ImageMatcher:
     """图片匹配引擎，根据描述词匹配相应图片"""
     
-    def __init__(self, data_dir: str = "data", similarity_method: str = "tfidf"):
+    def __init__(self, data_dir: str = "data", similarity_method: str = "tfidf", use_vector_store: bool = True):
         self.data_processor = DataProcessor(data_dir)
-        self.similarity_calculator = SimilarityCalculator(similarity_method)
+        self.similarity_calculator = SimilarityCalculator(similarity_method, use_vector_store)
         self.descriptions = []
         self.image_mappings = {}
+        self.use_vector_store = use_vector_store
         
         # 初始化数据
         self.initialize()
@@ -35,6 +36,15 @@ class ImageMatcher:
         self.image_mappings = self.data_processor.load_mappings()
         if not self.image_mappings and images:
             self.image_mappings = self.data_processor.create_mappings(images)
+        
+        # 构建向量索引（如果使用向量库）
+        if self.use_vector_store and self.descriptions:
+            print("构建向量索引...")
+            success = self.similarity_calculator.build_vector_index(self.descriptions)
+            if success:
+                print("✓ 向量索引构建完成")
+            else:
+                print("⚠ 向量索引构建失败，将使用传统方法")
         
         print(f"系统初始化完成，共有 {len(self.image_mappings)} 个图片-描述映射")
     
@@ -115,6 +125,10 @@ class ImageMatcher:
             self.data_processor.image_mappings = self.image_mappings
             self.data_processor.save_mappings()
             
+            # 如果使用向量库，添加到索引
+            if self.use_vector_store:
+                self.similarity_calculator.add_description_to_index(new_desc)
+            
             print(f"成功为图片 {image_name} 添加描述")
             return True
             
@@ -124,14 +138,58 @@ class ImageMatcher:
     
     def update_similarity_method(self, method: str):
         """更新相似度计算方法"""
-        self.similarity_calculator = SimilarityCalculator(method)
+        self.similarity_calculator = SimilarityCalculator(method, self.use_vector_store)
+        
+        # 如果切换到向量方法，需要重建索引
+        if method == "sentence_transformer" and self.use_vector_store and self.descriptions:
+            print("重建向量索引...")
+            success = self.similarity_calculator.build_vector_index(self.descriptions)
+            if success:
+                print("✓ 向量索引重建完成")
+        
         print(f"相似度计算方法已更新为: {method}")
     
     def get_statistics(self) -> Dict:
         """获取系统统计信息"""
-        return {
+        base_stats = {
             "total_descriptions": len(self.descriptions),
             "total_images": len(self.image_mappings),
             "similarity_method": self.similarity_calculator.method,
-            "available_keywords": len(self.data_processor.get_all_keywords())
+            "available_keywords": len(self.data_processor.get_all_keywords()),
+            "use_vector_store": self.use_vector_store
+        }
+        
+        # 添加向量库统计信息
+        if self.use_vector_store:
+            vector_stats = self.similarity_calculator.get_vector_store_stats()
+            base_stats.update(vector_stats)
+        
+        return base_stats
+    
+    def rebuild_vector_index(self) -> bool:
+        """重建向量索引"""
+        if not self.use_vector_store:
+            print("未启用向量库")
+            return False
+        
+        print("开始重建向量索引...")
+        success = self.similarity_calculator.rebuild_vector_index()
+        
+        if success:
+            print("✓ 向量索引重建完成")
+        else:
+            print("✗ 向量索引重建失败")
+        
+        return success
+    
+    def get_vector_store_info(self) -> Dict:
+        """获取向量库详细信息"""
+        if not self.use_vector_store:
+            return {"enabled": False, "message": "向量库未启用"}
+        
+        stats = self.similarity_calculator.get_vector_store_stats()
+        return {
+            "enabled": True,
+            "stats": stats,
+            "method": self.similarity_calculator.method
         }

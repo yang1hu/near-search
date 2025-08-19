@@ -3,251 +3,310 @@
 
 import requests
 import json
-import os
-from typing import Dict, List
+import time
+from pathlib import Path
 
+# API基础URL
+BASE_URL = "http://localhost:8000"
 
-class ImageMatcherClient:
-    """图片匹配系统API客户端"""
-    
-    def __init__(self, base_url: str = "http://localhost:8000"):
-        self.base_url = base_url
-        
-    def health_check(self) -> Dict:
-        """健康检查"""
-        response = requests.get(f"{self.base_url}/health")
-        return response.json()
-    
-    def search_images(self, query: str, top_k: int = 5, threshold: float = 0.1) -> Dict:
-        """搜索图片"""
-        data = {
-            "query": query,
-            "top_k": top_k,
-            "threshold": threshold
-        }
-        response = requests.post(f"{self.base_url}/search", json=data)
-        return response.json()
-    
-    def get_image_description(self, image_name: str) -> Dict:
-        """获取图片描述"""
-        response = requests.get(f"{self.base_url}/image/{image_name}/description")
-        return response.json()
-    
-    def add_image_description(self, image_name: str, description: str, keywords: List[str] = None) -> Dict:
-        """添加图片描述"""
-        data = {
-            "image_name": image_name,
-            "description": description,
-            "keywords": keywords or []
-        }
-        response = requests.post(f"{self.base_url}/image/description", json=data)
-        return response.json()
-    
-    def get_stats(self) -> Dict:
-        """获取系统统计"""
-        response = requests.get(f"{self.base_url}/stats")
-        return response.json()
-    
-    def update_similarity_method(self, method: str) -> Dict:
-        """更新相似度方法"""
-        data = {"method": method}
-        response = requests.put(f"{self.base_url}/similarity-method", json=data)
-        return response.json()
-    
-    def upload_image(self, file_path: str) -> Dict:
-        """上传图片"""
-        if not os.path.exists(file_path):
-            return {"error": "文件不存在"}
-        
-        with open(file_path, 'rb') as f:
-            files = {'file': f}
-            response = requests.post(f"{self.base_url}/upload", files=files)
-        return response.json()
+def test_health():
+    """测试健康检查"""
+    print("1. 测试健康检查...")
+    try:
+        response = requests.get(f"{BASE_URL}/health")
+        if response.status_code == 200:
+            data = response.json()
+            print(f"✓ 服务状态: {data['status']}")
+            print(f"✓ 版本: {data['version']}")
+            return True
+        else:
+            print(f"✗ 健康检查失败: {response.status_code}")
+            return False
+    except requests.exceptions.ConnectionError:
+        print("✗ 无法连接到服务，请确保服务已启动")
+        return False
 
+def test_stats():
+    """测试系统统计"""
+    print("\n2. 获取系统统计...")
+    try:
+        response = requests.get(f"{BASE_URL}/stats")
+        if response.status_code == 200:
+            data = response.json()
+            stats = data['stats']
+            print(f"✓ 描述数量: {stats['total_descriptions']}")
+            print(f"✓ 图片数量: {stats['total_images']}")
+            print(f"✓ 相似度方法: {stats['similarity_method']}")
+            return True
+        else:
+            print(f"✗ 获取统计失败: {response.status_code}")
+            return False
+    except Exception as e:
+        print(f"✗ 请求失败: {e}")
+        return False
 
-def demo_api_usage():
-    """演示API使用"""
-    print("图片描述匹配系统 API 演示")
-    print("=" * 50)
+def test_search():
+    """测试图片搜索"""
+    print("\n3. 测试图片搜索...")
     
-    # 创建客户端
-    client = ImageMatcherClient()
+    test_queries = [
+        {"query": "日落", "top_k": 3, "threshold": 0.1},
+        {"query": "猫咪", "top_k": 2, "threshold": 0.2},
+        {"query": "城市夜景", "top_k": 5, "threshold": 0.1}
+    ]
+    
+    for i, search_data in enumerate(test_queries, 1):
+        print(f"\n  测试 {i}: 搜索 '{search_data['query']}'")
+        try:
+            response = requests.post(f"{BASE_URL}/search", json=search_data)
+            if response.status_code == 200:
+                data = response.json()
+                print(f"  ✓ 找到 {data['total_results']} 张图片")
+                
+                for j, result in enumerate(data['results'][:2], 1):  # 只显示前2个结果
+                    print(f"    {j}. {result['image_name']}")
+                    print(f"       描述: {result['description']}")
+                    print(f"       相似度: {result['similarity_score']:.3f}")
+                    print(f"       文件存在: {'是' if result['file_exists'] else '否'}")
+            else:
+                print(f"  ✗ 搜索失败: {response.status_code}")
+                print(f"  错误: {response.text}")
+        except Exception as e:
+            print(f"  ✗ 请求失败: {e}")
+
+def test_add_description():
+    """测试添加描述"""
+    print("\n4. 测试添加图片描述...")
+    
+    test_data = {
+        "image_name": "test_image.jpg",
+        "description": "这是一个测试图片描述",
+        "keywords": ["测试", "图片", "描述"]
+    }
     
     try:
-        # 1. 健康检查
-        print("\n1. 健康检查")
-        health = client.health_check()
-        print(f"服务状态: {health.get('status')}")
-        print(f"版本: {health.get('version')}")
-        
-        # 2. 获取系统统计
-        print("\n2. 系统统计信息")
-        stats = client.get_stats()
-        if stats.get('success'):
-            stats_data = stats['stats']
-            print(f"描述数量: {stats_data['total_descriptions']}")
-            print(f"图片数量: {stats_data['total_images']}")
-            print(f"相似度方法: {stats_data['similarity_method']}")
-        
-        # 3. 搜索演示
-        print("\n3. 搜索演示")
-        search_queries = ["日落", "猫咪", "城市", "风景"]
-        
-        for query in search_queries:
-            print(f"\n搜索: '{query}'")
-            results = client.search_images(query, top_k=3, threshold=0.1)
-            
-            if results.get('success') and results['results']:
-                print(f"找到 {results['total_results']} 张图片:")
-                for i, img in enumerate(results['results'], 1):
-                    print(f"  {i}. {img['image_name']} (相似度: {img['similarity_score']:.3f})")
-                    print(f"     描述: {img['description']}")
-                    print(f"     关键词: {', '.join(img['keywords'])}")
+        response = requests.post(f"{BASE_URL}/image/description", json=test_data)
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                print(f"✓ {data['message']}")
             else:
-                print("  没有找到匹配的图片")
-        
-        # 4. 添加新描述演示
-        print("\n4. 添加描述演示")
-        new_desc_result = client.add_image_description(
-            image_name="demo_image.jpg",
-            description="演示用的测试图片",
-            keywords=["演示", "测试", "样例"]
-        )
-        print(f"添加结果: {new_desc_result.get('message')}")
-        
-        # 5. 获取图片描述
-        print("\n5. 获取图片描述")
-        desc_result = client.get_image_description("demo_image.jpg")
-        if desc_result.get('success'):
-            print(f"图片: {desc_result['image_name']}")
-            print(f"描述: {desc_result.get('description_text')}")
-            print(f"关键词: {', '.join(desc_result.get('keywords', []))}")
-        
-        # 6. 切换相似度方法演示
-        print("\n6. 相似度方法切换")
-        methods = ["tfidf", "sentence_transformer"]
-        for method in methods:
-            result = client.update_similarity_method(method)
-            print(f"切换到 {method}: {result.get('message')}")
-            
-            # 用新方法搜索一次
-            search_result = client.search_images("美丽", top_k=2)
-            if search_result.get('success'):
-                print(f"  使用 {method} 找到 {search_result['total_results']} 张图片")
-        
-    except requests.exceptions.ConnectionError:
-        print("错误: 无法连接到API服务")
-        print("请确保服务已启动: python main.py")
+                print(f"✗ {data['message']}")
+        else:
+            print(f"✗ 添加描述失败: {response.status_code}")
+            print(f"错误: {response.text}")
     except Exception as e:
-        print(f"发生错误: {e}")
+        print(f"✗ 请求失败: {e}")
 
-
-def interactive_client():
-    """交互式客户端"""
-    print("图片描述匹配系统 - 交互式客户端")
-    print("=" * 50)
+def test_get_description():
+    """测试获取图片描述"""
+    print("\n5. 测试获取图片描述...")
     
-    client = ImageMatcherClient()
-    
-    while True:
-        print("\n请选择操作:")
-        print("1. 搜索图片")
-        print("2. 查看图片描述")
-        print("3. 添加图片描述")
-        print("4. 上传图片")
-        print("5. 系统统计")
-        print("6. 切换相似度方法")
-        print("7. 运行演示")
-        print("8. 退出")
-        
-        choice = input("\n请输入选项 (1-8): ").strip()
-        
-        try:
-            if choice == "1":
-                query = input("请输入搜索词: ").strip()
-                if query:
-                    top_k = int(input("返回结果数量 (默认5): ").strip() or "5")
-                    threshold = float(input("相似度阈值 (默认0.1): ").strip() or "0.1")
-                    
-                    results = client.search_images(query, top_k, threshold)
-                    print(f"\n搜索结果:")
-                    if results.get('success') and results['results']:
-                        for i, img in enumerate(results['results'], 1):
-                            print(f"{i}. {img['image_name']} (相似度: {img['similarity_score']:.3f})")
-                            print(f"   描述: {img['description']}")
-                            print(f"   文件存在: {'是' if img['file_exists'] else '否'}")
-                    else:
-                        print("没有找到匹配的图片")
-            
-            elif choice == "2":
-                image_name = input("请输入图片文件名: ").strip()
-                if image_name:
-                    result = client.get_image_description(image_name)
-                    if result.get('success'):
-                        print(f"\n图片: {result['image_name']}")
-                        print(f"描述: {result.get('description_text')}")
-                        print(f"关键词: {', '.join(result.get('keywords', []))}")
-                    else:
-                        print(f"错误: {result.get('message')}")
-            
-            elif choice == "3":
-                image_name = input("请输入图片文件名: ").strip()
-                description = input("请输入描述: ").strip()
-                keywords_input = input("请输入关键词 (用逗号分隔): ").strip()
-                
-                if image_name and description:
-                    keywords = [kw.strip() for kw in keywords_input.split(",") if kw.strip()]
-                    result = client.add_image_description(image_name, description, keywords)
-                    print(f"结果: {result.get('message')}")
-            
-            elif choice == "4":
-                file_path = input("请输入图片文件路径: ").strip()
-                if file_path:
-                    result = client.upload_image(file_path)
-                    print(f"上传结果: {result.get('message', result.get('error'))}")
-            
-            elif choice == "5":
-                result = client.get_stats()
-                if result.get('success'):
-                    stats = result['stats']
-                    print(f"\n系统统计:")
-                    print(f"描述数量: {stats['total_descriptions']}")
-                    print(f"图片数量: {stats['total_images']}")
-                    print(f"相似度方法: {stats['similarity_method']}")
-                    print(f"可用关键词: {stats['available_keywords']}")
-            
-            elif choice == "6":
-                print("可用方法:")
-                print("1. tfidf")
-                print("2. sentence_transformer")
-                method_choice = input("请选择 (1-2): ").strip()
-                
-                method = "tfidf" if method_choice == "1" else "sentence_transformer"
-                result = client.update_similarity_method(method)
-                print(f"结果: {result.get('message')}")
-            
-            elif choice == "7":
-                demo_api_usage()
-            
-            elif choice == "8":
-                print("感谢使用！")
-                break
-            
+    image_name = "test_image.jpg"
+    try:
+        response = requests.get(f"{BASE_URL}/image/{image_name}/description")
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                print(f"✓ 图片: {data['image_name']}")
+                print(f"✓ 描述: {data['description_text']}")
+                print(f"✓ 关键词: {', '.join(data['keywords'])}")
             else:
-                print("无效选择")
-                
-        except requests.exceptions.ConnectionError:
-            print("错误: 无法连接到API服务，请确保服务已启动")
-        except ValueError as e:
-            print(f"输入格式错误: {e}")
-        except Exception as e:
-            print(f"发生错误: {e}")
+                print(f"✗ {data['message']}")
+        else:
+            print(f"✗ 获取描述失败: {response.status_code}")
+    except Exception as e:
+        print(f"✗ 请求失败: {e}")
 
+def test_similarity_method():
+    """测试切换相似度方法"""
+    print("\n6. 测试切换相似度方法...")
+    
+    methods = ["tfidf", "sentence_transformer"]
+    
+    for method in methods:
+        print(f"  切换到: {method}")
+        try:
+            response = requests.put(f"{BASE_URL}/similarity-method", json={"method": method})
+            if response.status_code == 200:
+                data = response.json()
+                print(f"  ✓ {data['message']}")
+            else:
+                print(f"  ✗ 切换失败: {response.status_code}")
+        except Exception as e:
+            print(f"  ✗ 请求失败: {e}")
+        
+        time.sleep(1)  # 等待一秒
+
+def upload_test_image():
+    """上传测试图片"""
+    print("\n7. 测试图片上传...")
+    
+    # 创建一个简单的测试文件
+    test_file_path = Path("test_image.txt")
+    test_file_path.write_text("这是一个测试文件，模拟图片上传")
+    
+    try:
+        with open(test_file_path, 'rb') as f:
+            files = {'file': ('test_image.jpg', f, 'image/jpeg')}
+            response = requests.post(f"{BASE_URL}/upload", files=files)
+            
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                print(f"✓ {data['message']}")
+            else:
+                print(f"✗ {data['message']}")
+        else:
+            print(f"✗ 上传失败: {response.status_code}")
+            print(f"错误: {response.text}")
+    except Exception as e:
+        print(f"✗ 上传失败: {e}")
+    finally:
+        # 清理测试文件
+        if test_file_path.exists():
+            test_file_path.unlink()
+
+def test_vector_store():
+    """测试向量库功能"""
+    print("\n8. 测试向量库功能...")
+    
+    # 获取向量库信息
+    print("  8.1 获取向量库信息")
+    try:
+        response = requests.get(f"{BASE_URL}/vector-store/info")
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                info = data['data']
+                print(f"  ✓ 向量库启用: {info.get('enabled', False)}")
+                if info.get('enabled'):
+                    stats = info.get('stats', {})
+                    print(f"  ✓ 总向量数: {stats.get('total_vectors', 0)}")
+                    print(f"  ✓ 活跃向量数: {stats.get('active_vectors', 0)}")
+                    print(f"  ✓ 嵌入维度: {stats.get('embedding_dimension', 0)}")
+                    print(f"  ✓ 存储大小: {stats.get('store_size_mb', 0)} MB")
+            else:
+                print(f"  ✗ {data['message']}")
+        else:
+            print(f"  ✗ 获取向量库信息失败: {response.status_code}")
+    except Exception as e:
+        print(f"  ✗ 请求失败: {e}")
+    
+    # 获取向量库统计
+    print("\n  8.2 获取向量库统计")
+    try:
+        response = requests.get(f"{BASE_URL}/vector-store/stats")
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                stats = data['stats']
+                print(f"  ✓ 向量库统计获取成功")
+                for key, value in stats.items():
+                    print(f"    {key}: {value}")
+            else:
+                print(f"  ✗ {data['message']}")
+        else:
+            print(f"  ✗ 获取统计失败: {response.status_code}")
+    except Exception as e:
+        print(f"  ✗ 请求失败: {e}")
+    
+    # 重建向量索引
+    print("\n  8.3 重建向量索引")
+    try:
+        response = requests.post(f"{BASE_URL}/vector-store/rebuild")
+        if response.status_code == 200:
+            data = response.json()
+            if data['success']:
+                print(f"  ✓ {data['message']}")
+            else:
+                print(f"  ✗ {data['message']}")
+        else:
+            print(f"  ✗ 重建索引失败: {response.status_code}")
+    except Exception as e:
+        print(f"  ✗ 请求失败: {e}")
+
+def test_performance_comparison():
+    """测试性能对比"""
+    print("\n9. 性能对比测试...")
+    
+    test_queries = ["美丽风景", "可爱动物", "现代建筑", "自然景观", "城市夜景"]
+    
+    for method in ["tfidf", "sentence_transformer"]:
+        print(f"\n  测试方法: {method}")
+        
+        # 切换方法
+        try:
+            response = requests.put(f"{BASE_URL}/similarity-method", json={"method": method})
+            if response.status_code == 200:
+                print(f"  ✓ 已切换到 {method}")
+            else:
+                print(f"  ✗ 切换方法失败")
+                continue
+        except Exception as e:
+            print(f"  ✗ 切换方法失败: {e}")
+            continue
+        
+        # 测试搜索性能
+        total_time = 0
+        for query in test_queries:
+            start_time = time.time()
+            try:
+                response = requests.post(f"{BASE_URL}/search", json={
+                    "query": query,
+                    "top_k": 3,
+                    "threshold": 0.1
+                })
+                end_time = time.time()
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    search_time = end_time - start_time
+                    total_time += search_time
+                    print(f"    '{query}': {search_time:.3f}s, 找到 {data['total_results']} 个结果")
+                else:
+                    print(f"    '{query}': 搜索失败")
+            except Exception as e:
+                print(f"    '{query}': 请求失败 - {e}")
+        
+        avg_time = total_time / len(test_queries) if test_queries else 0
+        print(f"  平均搜索时间: {avg_time:.3f}s")
+
+def main():
+    """主测试函数"""
+    print("=" * 60)
+    print("图片描述匹配系统 - API测试")
+    print("=" * 60)
+    print("请确保服务已启动 (python start_server.py)")
+    print("=" * 60)
+    
+    # 等待用户确认
+    input("按回车键开始测试...")
+    
+    # 执行测试
+    if not test_health():
+        print("\n服务未启动或无法访问，测试终止")
+        return
+    
+    test_stats()
+    test_search()
+    test_add_description()
+    test_get_description()
+    test_similarity_method()
+    upload_test_image()
+    test_vector_store()
+    test_performance_comparison()
+    
+    print("\n" + "=" * 60)
+    print("测试完成！")
+    print("你可以访问以下地址查看API文档:")
+    print(f"- Swagger UI: {BASE_URL}/docs")
+    print(f"- ReDoc: {BASE_URL}/redoc")
+    print("\n向量库相关接口:")
+    print(f"- 向量库信息: {BASE_URL}/vector-store/info")
+    print(f"- 向量库统计: {BASE_URL}/vector-store/stats")
+    print(f"- 重建索引: {BASE_URL}/vector-store/rebuild")
+    print("=" * 60)
 
 if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) > 1 and sys.argv[1] == "demo":
-        demo_api_usage()
-    else:
-        interactive_client()
+    main()

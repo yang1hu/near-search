@@ -4,39 +4,60 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 import jieba
 from typing import List, Tuple, Dict
+from .vector_store import VectorStore, EnhancedSimilarityCalculator
 
 
 class SimilarityCalculator:
     """相似度计算器，支持多种相似度计算方法"""
     
-    def __init__(self, method: str = "tfidf"):
+    def __init__(self, method: str = "tfidf", use_vector_store: bool = True):
         self.method = method
+        self.use_vector_store = use_vector_store
         self.vectorizer = None
         self.sentence_model = None
+        self.enhanced_calculator = None
         
-        if method == "tfidf":
-            self.vectorizer = TfidfVectorizer(
-                tokenizer=self._tokenize,
-                lowercase=False,
-                token_pattern=None
-            )
-        elif method == "sentence_transformer":
+        if method == "sentence_transformer" and use_vector_store:
+            # 使用增强的计算器（带向量库）
             try:
-                # 使用中文语义模型
-                self.sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                self.enhanced_calculator = EnhancedSimilarityCalculator(method)
+                print("✓ 启用向量库加速搜索")
             except Exception as e:
-                print(f"加载语义模型失败: {e}")
-                print("回退到TF-IDF方法")
-                self.method = "tfidf"
+                print(f"向量库初始化失败: {e}")
+                print("回退到传统方法")
+                self.use_vector_store = False
+        
+        if not self.use_vector_store or method == "tfidf":
+            # 传统方法
+            if method == "tfidf":
                 self.vectorizer = TfidfVectorizer(
                     tokenizer=self._tokenize,
                     lowercase=False,
                     token_pattern=None
                 )
+            elif method == "sentence_transformer":
+                try:
+                    # 使用中文语义模型
+                    self.sentence_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+                except Exception as e:
+                    print(f"加载语义模型失败: {e}")
+                    print("回退到TF-IDF方法")
+                    self.method = "tfidf"
+                    self.vectorizer = TfidfVectorizer(
+                        tokenizer=self._tokenize,
+                        lowercase=False,
+                        token_pattern=None
+                    )
     
     def _tokenize(self, text: str) -> List[str]:
         """中文分词"""
         return list(jieba.cut(text))
+    
+    def build_vector_index(self, descriptions: List[Dict]) -> bool:
+        """构建向量索引"""
+        if self.enhanced_calculator:
+            return self.enhanced_calculator.build_vector_index(descriptions)
+        return False
     
     def calculate_tfidf_similarity(self, query: str, texts: List[str]) -> List[float]:
         """使用TF-IDF计算相似度"""
@@ -90,6 +111,35 @@ class SimilarityCalculator:
         if not descriptions:
             return []
         
+        # 优先使用向量库搜索（如果可用）
+        if self.enhanced_calculator and self.method == "sentence_transformer":
+            try:
+                # 使用向量库进行快速搜索
+                vector_results = self.enhanced_calculator.search_similar_vectors(
+                    query, top_k=top_k, threshold=threshold
+                )
+                
+                if vector_results:
+                    # 转换格式以匹配原有接口
+                    converted_results = []
+                    for meta, score in vector_results:
+                        # 从元数据重构描述对象
+                        desc_obj = {
+                            'id': meta['id'],
+                            'text': meta['text'],
+                            'keywords': meta.get('keywords', [])
+                        }
+                        converted_results.append((desc_obj, score))
+                    
+                    print(f"✓ 向量库搜索找到 {len(converted_results)} 个结果")
+                    return converted_results
+                
+            except Exception as e:
+                print(f"向量库搜索失败，回退到传统方法: {e}")
+        
+        # 传统搜索方法
+        print("使用传统相似度计算方法")
+        
         # 提取描述文本
         texts = [desc["text"] for desc in descriptions]
         
@@ -117,3 +167,21 @@ class SimilarityCalculator:
         # 按相似度排序并返回top_k
         filtered_results.sort(key=lambda x: x[1], reverse=True)
         return filtered_results[:top_k]
+    
+    def add_description_to_index(self, description: Dict) -> bool:
+        """添加描述到向量索引"""
+        if self.enhanced_calculator:
+            return self.enhanced_calculator.add_description_to_index(description)
+        return False
+    
+    def get_vector_store_stats(self) -> Dict:
+        """获取向量库统计信息"""
+        if self.enhanced_calculator:
+            return self.enhanced_calculator.get_vector_store_stats()
+        return {}
+    
+    def rebuild_vector_index(self) -> bool:
+        """重建向量索引"""
+        if self.enhanced_calculator:
+            return self.enhanced_calculator.rebuild_vector_index()
+        return False

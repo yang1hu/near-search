@@ -338,6 +338,68 @@ async def generate_keywords_for_existing():
         raise HTTPException(status_code=500, detail=f"生成关键词失败: {str(e)}")
 
 
+@app.get("/vector-store/info")
+async def get_vector_store_info():
+    """获取向量库信息接口"""
+    try:
+        if not matcher:
+            raise HTTPException(status_code=500, detail="系统未初始化")
+        
+        info = matcher.get_vector_store_info()
+        
+        return {
+            "success": True,
+            "message": "获取向量库信息成功",
+            "data": info
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取向量库信息失败: {str(e)}")
+
+
+@app.post("/vector-store/rebuild", response_model=BaseResponse)
+async def rebuild_vector_index():
+    """重建向量索引接口"""
+    try:
+        if not matcher:
+            raise HTTPException(status_code=500, detail="系统未初始化")
+        
+        success = matcher.rebuild_vector_index()
+        
+        if success:
+            return BaseResponse(
+                success=True,
+                message="向量索引重建成功"
+            )
+        else:
+            return BaseResponse(
+                success=False,
+                message="向量索引重建失败"
+            )
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重建向量索引失败: {str(e)}")
+
+
+@app.get("/vector-store/stats")
+async def get_vector_store_stats():
+    """获取向量库统计信息接口"""
+    try:
+        if not matcher:
+            raise HTTPException(status_code=500, detail="系统未初始化")
+        
+        stats = matcher.similarity_calculator.get_vector_store_stats()
+        
+        return {
+            "success": True,
+            "message": "获取向量库统计成功",
+            "stats": stats
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取向量库统计失败: {str(e)}")
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
